@@ -28,6 +28,8 @@ struct Args {
     fallocate: bool,
     #[clap(long)]
     dump_kstack_after_ctrlc: bool,
+    #[clap(long)]
+    abort_on_ctrlc: bool,
 }
 
 fn main() {
@@ -123,7 +125,12 @@ fn main() {
     ctrlc::set_handler({
         let stop = Arc::clone(&stop);
         move || {
-            info!("Signalling stop");
+            info!("Ctrl-C received");
+            if args.abort_on_ctrlc {
+                info!("aborting process");
+                std::process::abort();
+            }
+            info!("setting stop flag");
             stop.store(true, std::sync::atomic::Ordering::Relaxed);
             let myself = procfs::process::Process::myself().unwrap();
             if !args.dump_kstack_after_ctrlc {
@@ -149,18 +156,16 @@ fn main() {
 
     // indefinitly write blobs of size and alignment args.io_size_and_align into the file
     let mut write_buf = make_buffer();
-    let mut read_buf = make_buffer();
     while !stop.load(std::sync::atomic::Ordering::Relaxed) {
         let offset = rand::thread_rng()
             .gen_range(0..args.size.as_u64() / (args.io_size_and_align.as_u64()))
             * (args.io_size_and_align.as_u64());
-        if rand::thread_rng().gen_bool(1.0) {
+        // change what we write every now and then so it's guaranteed we're dirtying stuff
+        if rand::thread_rng().gen_bool(0.01) {
             rand::thread_rng().fill_bytes(&mut write_buf);
-            if let Err(e) = file.write_all_at(&write_buf, offset) {
-                panic!("write failed: {offset:x} {e}");
-            }
-        } else {
-            file.read_exact_at(&mut read_buf, offset).unwrap();
+        }
+        if let Err(e) = file.write_all_at(&write_buf, offset) {
+            panic!("write failed: {offset:x} {e}");
         }
     }
     info!("writer stopped, closing file descriptor");
@@ -193,8 +198,12 @@ fn dump_memory_metrics(myself: &procfs::process::Process) {
         ..
     } = myself.status().unwrap();
     info!(
-        "process: vmrss: {:?}, rssanon: {:?}, rssfile: {:?}, rssshmem: {:?}, vmsize: {:?}, smaps_rollup: {:?}",
-        vmrss, rssanon, rssfile, rssshmem, vmsize, smaps_rollup,
+        "/proc/self/status (inaccurate) vmrss: {:?}, rssanon: {:?}, rssfile: {:?}, rssshmem: {:?}, vmsize: {:?}",
+        vmrss, rssanon, rssfile, rssshmem, vmsize,
+    );
+    info!(
+        "/proc/self/smaps_rollup (accurate): {} = {smaps_rollup:?}",
+        smaps_rollup.iter().map(|(_, v)| v).sum::<u64>(),
     );
     info!(
         "system : nr_dirty: {} MiB",
