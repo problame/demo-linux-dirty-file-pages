@@ -1,7 +1,6 @@
 use core::panic;
 use std::{
-    collections::HashMap,
-    io::{Read, Seek, Write},
+    io::Read,
     mem::MaybeUninit,
     num::NonZeroUsize,
     os::{
@@ -10,12 +9,12 @@ use std::{
     },
     path::PathBuf,
     sync::{atomic::AtomicBool, Arc},
-    time::{Duration, Instant},
+    time::Duration,
 };
 
 use clap::Parser;
-use procfs::Current;
 use rand::{Rng, RngCore};
+use tracing::{info, warn};
 
 #[derive(clap::Parser, Debug)]
 struct Args {
@@ -32,9 +31,19 @@ struct Args {
 }
 
 fn main() {
-    let args = dbg!(Args::parse());
+    // default RUST_LOG env var to "info"
+    std::env::set_var(
+        "RUST_LOG",
+        std::env::var("RUST_LOG").unwrap_or_else(|_| "info".to_string()),
+    );
+    tracing_subscriber::fmt::fmt()
+        .with_timer(tracing_subscriber::fmt::time::uptime())
+        .init();
 
-    let mut file = std::fs::OpenOptions::new()
+    let args = Args::parse();
+    info!(?args, "parsed args");
+
+    let file = std::fs::OpenOptions::new()
         .write(true)
         .create(true)
         .truncate(true)
@@ -56,10 +65,9 @@ fn main() {
             assert_eq!(err, 0);
             let mystatx = mystatx.assume_init();
             if mystatx.stx_mask & libc::STATX_DIOALIGN == 0 {
-                eprintln!("DIOALIGN not supported, cannot validate io_size");
+                warn!("DIOALIGN not supported, cannot validate io_size");
             } else {
-                dbg!(mystatx.stx_dio_mem_align);
-                dbg!(mystatx.stx_dio_offset_align);
+                info!(%mystatx.stx_dio_mem_align, %mystatx.stx_dio_offset_align, "statx");
                 let io_size_and_align = args.io_size_and_align.as_u64();
                 assert_eq!(io_size_and_align % (mystatx.stx_dio_mem_align as u64), 0);
                 assert_eq!(io_size_and_align % (mystatx.stx_dio_offset_align as u64), 0);
@@ -100,7 +108,7 @@ fn main() {
         .unwrap();
     }
 
-    println!("Initialized");
+    info!("Initialized");
 
     std::thread::spawn(|| {
         let myself = procfs::process::Process::myself().unwrap();
@@ -115,14 +123,14 @@ fn main() {
     ctrlc::set_handler({
         let stop = Arc::clone(&stop);
         move || {
-            println!("Signalling stop");
+            info!("Signalling stop");
             stop.store(true, std::sync::atomic::Ordering::Relaxed);
             let myself = procfs::process::Process::myself().unwrap();
             if !args.dump_kstack_after_ctrlc {
                 return;
             }
             if myself.uid().unwrap() != 0 {
-                println!("Not root, skipping stack dump");
+                info!("Not root, skipping stack dump");
                 return;
             }
             std::thread::spawn(move || {
@@ -131,7 +139,7 @@ fn main() {
                     let mut res = myself.open_relative("stack").unwrap();
                     buf.clear();
                     res.read_to_string(&mut buf).unwrap();
-                    println!("{}", buf);
+                    info!("{}", buf);
                     std::thread::sleep(Duration::from_secs(1));
                 }
             });
@@ -155,9 +163,9 @@ fn main() {
             file.read_exact_at(&mut read_buf, offset).unwrap();
         }
     }
-    println!("writer stopped, closing file descriptor");
+    info!("writer stopped, closing file descriptor");
     drop(file);
-    println!("file descriptor closed, exiting");
+    info!("file descriptor closed, exiting");
 }
 
 fn dump_memory_metrics(myself: &procfs::process::Process) {
@@ -184,11 +192,11 @@ fn dump_memory_metrics(myself: &procfs::process::Process) {
         vmsize,
         ..
     } = myself.status().unwrap();
-    println!(
+    info!(
         "process: vmrss: {:?}, rssanon: {:?}, rssfile: {:?}, rssshmem: {:?}, vmsize: {:?}, smaps_rollup: {:?}",
         vmrss, rssanon, rssfile, rssshmem, vmsize, smaps_rollup,
     );
-    println!(
+    info!(
         "system : nr_dirty: {} MiB",
         (u64::try_from(vmstat["nr_dirty"]).unwrap() * page_sz) >> 20
     );
