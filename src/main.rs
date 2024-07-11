@@ -1,5 +1,6 @@
 use core::panic;
 use std::{
+    collections::HashMap,
     io::Read,
     mem::MaybeUninit,
     num::NonZeroUsize,
@@ -209,4 +210,42 @@ fn dump_memory_metrics(myself: &procfs::process::Process) {
         "system : nr_dirty: {} MiB",
         (u64::try_from(vmstat["nr_dirty"]).unwrap() * page_sz) >> 20
     );
+    let cgroups = myself.cgroups().unwrap();
+    assert_eq!(
+        cgroups.0.len(),
+        1,
+        "only cgroupv2 supported, should have just one cgroup"
+    );
+    let cgroup = cgroups.0.into_iter().next().unwrap();
+    assert_eq!(cgroup.hierarchy, 0, "only cgroupv2 is supported");
+    assert!(cgroup.pathname.starts_with("/"));
+    let root = PathBuf::from(format!("/sys/fs/cgroup{}", cgroup.pathname));
+    let memory_stats = std::fs::read_to_string(root.join("memory.stat")).unwrap();
+    let print_vars = ["file", "file_dirty", "file_writeback", "file_mapped"];
+    let memory_stats = extract_cgroup_memory_stat_vars(&memory_stats, print_vars);
+    let memory_max = std::fs::read_to_string(root.join("memory.max")).unwrap().trim().to_owned();
+    let memory_high = std::fs::read_to_string(root.join("memory.high")).unwrap().trim().to_owned();
+    info!("my cgroup {root:?} memory.max={memory_max:?} memory.high={memory_high:?} memory.stat={memory_stats:?}");
+}
+
+fn extract_cgroup_memory_stat_vars<'a>(
+    memory_stats: &'a String,
+    print_vars: [&'static str; 4],
+) -> Vec<(&'a str, u64)> {
+    let vars: HashMap<_, _> = memory_stats
+        .lines()
+        .map(|line| {
+            let mut comps = line.split_ascii_whitespace();
+            assert_eq!(comps.clone().count(), 2);
+            (
+                comps.next().unwrap(),
+                comps.next().unwrap().parse::<u64>().unwrap(),
+            )
+        })
+        .collect();
+    let out = print_vars
+        .into_iter()
+        .map(|key| (key, vars[key]))
+        .collect::<Vec<_>>();
+    out
 }
