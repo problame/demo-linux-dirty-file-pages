@@ -1,0 +1,13 @@
+[package]
+name = "rss-in-linux"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+byte-unit = "5.1.4"
+clap = { version = "4.5.9", features = ["derive"] }
+ctrlc = "3.4.4"
+libc = "0.2.155"
+nix = { version = "0.29.0", features = ["fs", "mman"] }
+procfs = "0.16.0"
+rand = "0.8.5"
