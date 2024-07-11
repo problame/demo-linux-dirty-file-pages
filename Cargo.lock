@@ -299,6 +299,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "demo-linux-dirty-file-pages"
+version = "0.1.0"
+dependencies = [
+ "byte-unit",
+ "clap",
+ "ctrlc",
+ "libc",
+ "nix 0.29.0",
+ "procfs",
+ "rand",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "equivalent"
 version = "1.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -749,21 +764,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 1.0.109",
-]
-
-[[package]]
-name = "rss-in-linux"
-version = "0.1.0"
-dependencies = [
- "byte-unit",
- "clap",
- "ctrlc",
- "libc",
- "nix 0.29.0",
- "procfs",
- "rand",
- "tracing",
- "tracing-subscriber",
 ]
 
 [[package]]

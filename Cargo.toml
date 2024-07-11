@@ -1,5 +1,5 @@
 [package]
-name = "rss-in-linux"
+name = "demo-linux-dirty-file-pages"
 version = "0.1.0"
 edition = "2021"
 
